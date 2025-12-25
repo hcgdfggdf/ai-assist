@@ -1,90 +1,107 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sharon AI</title>
-  <style>
-    :root { --bg: #0a0a0a; --card: #161616; --accent: #7c4dff; --text: #f0f0f0; }
-    body { margin: 0; font-family: sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; height: 100vh; }
-    .chat-container { width: 95%; max-width: 450px; height: 80vh; background: var(--card); border-radius: 12px; display: flex; flex-direction: column; border: 1px solid #333; }
-    #messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-    .message { max-width: 85%; padding: 10px; border-radius: 10px; font-size: 0.9rem; }
-    .user-msg { align-self: flex-end; background: var(--accent); }
-    .ai-msg { align-self: flex-start; background: #2a2a2a; }
-    .input-area { padding: 15px; border-top: 1px solid #333; display: flex; gap: 5px; }
-    input { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #444; background: #000; color: #fff; }
-    button { padding: 10px 15px; background: var(--accent); border: none; color: #fff; border-radius: 5px; cursor: pointer; }
-    button:disabled { opacity: 0.3; }
-  </style>
-</head>
-<body>
-
-<div class="chat-container">
-  <div id="messages"><div class="message ai-msg" id="status">Loading...</div></div>
-  <div class="input-area">
-    <input type="text" id="input" placeholder="Wait for it..." disabled>
-    <button id="btn" disabled>Send</button>
-  </div>
-</div>
-
 <script type="module">
-  // Using the most stable production build
-  import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2";
+  import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.2.1";
 
-  // Force single-thread and no-cache to prevent the 100% hang
-  env.allowLocalModels = false;
+  // --- CRITICAL FIXES ---
+  // Disable local models so it doesn't look for files on your server
+  env.allowLocalModels = false; 
+  // Allow remote models to fetch from Hugging Face
+  env.allowRemoteModels = true;
+  
+  // Use a specific proxy or clear it to avoid CORS issues
+  env.backends.onnx.wasm.proxy = false; 
+  
+  // Some browsers fail if numThreads is too high or set incorrectly
   env.backends.onnx.wasm.numThreads = 1;
-  env.backends.onnx.wasm.simd = false; // Disabling SIMD fixes hangs on older/mobile browsers
 
-  const msgDiv = document.getElementById("messages");
-  const status = document.getElementById("status");
-  const input = document.getElementById("input");
-  const btn = document.getElementById("btn");
+  const messagesDiv = document.getElementById("messages");
+  const inputField = document.getElementById("user-input");
+  const sendBtn = document.getElementById("send-btn");
+  const statusDot = document.getElementById("status-dot");
+  const statusText = document.getElementById("status-text");
 
-  let pipe = null;
+  let generator = null;
+  let chatHistory = [{ role: "system", content: "You are Sharon, a sarcastic AI assistant." }];
 
   async function init() {
     try {
-      // Swapping to a 'Text2Text' model - much more stable for web than 'Text-Generation'
-      pipe = await pipeline("text2text-generation", "Xenova/flan-t5-small");
+      statusText.innerText = "Requesting brain cells from the cloud...";
       
-      status.innerText = "Sharon is online. Be quick.";
-      input.disabled = false;
-      btn.disabled = false;
-      input.placeholder = "Say something...";
+      // Load the model
+      // We use 'onnx-community/SmolLM2-135M-Instruct' which is highly compatible
+      generator = await pipeline("text-generation", "onnx-community/SmolLM2-135M-Instruct", {
+        device: "wasm", // Force WASM for maximum compatibility across browsers
+        progress_callback: (p) => {
+          if (p.status === 'progress') {
+            statusText.innerText = `Downloading: ${Math.round(p.progress)}%`;
+          }
+        }
+      });
+
+      statusDot.classList.add("ready");
+      statusText.innerText = "I'm in! Let's cause some chaos.";
+      inputField.disabled = false;
+      sendBtn.disabled = false;
+      inputField.placeholder = "Say something...";
     } catch (e) {
-      status.innerText = "Error: " + e.message;
+      console.error("Initialization Error:", e);
+      statusText.innerText = "Access Denied: " + e.message;
     }
   }
 
-  async function send() {
-    const text = input.value.trim();
-    if (!text) return;
+  function addMsg(text, type) {
+    const d = document.createElement("div");
+    d.className = `message ${type}-msg`;
+    d.innerText = text;
+    messagesDiv.appendChild(d);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
 
-    const u = document.createElement("div");
-    u.className = "message user-msg";
-    u.innerText = text;
-    msgDiv.appendChild(u);
-    input.value = "";
+  async function talk() {
+    const val = inputField.value.trim();
+    if (!val || !generator) return;
 
-    const loading = document.createElement("div");
-    loading.className = "message ai-msg";
-    loading.innerText = "...";
-    msgDiv.appendChild(loading);
+    addMsg(val, "user");
+    chatHistory.push({ role: "user", content: val });
+    inputField.value = "";
+    inputField.disabled = true;
+    sendBtn.disabled = true;
+
+    const t = document.createElement("div");
+    t.className = "message ai-msg";
+    t.innerText = "Sharon is thinking...";
+    messagesDiv.appendChild(t);
 
     try {
-      const res = await pipe(text, { max_new_tokens: 50 });
-      loading.innerText = res[0].generated_text || "Whatever.";
+      const output = await generator(chatHistory, { 
+        max_new_tokens: 60, 
+        temperature: parseFloat(document.getElementById("temp-input").value) || 0.7,
+        do_sample: true,
+        return_full_text: false
+      });
+
+      if (messagesDiv.contains(t)) messagesDiv.removeChild(t);
+      
+      // Handle different output formats between Transformers.js versions
+      const response = output[0].generated_text.at(-1).content;
+      
+      addMsg(response, "ai");
+      chatHistory.push({ role: "assistant", content: response });
+      
+      // Keep memory short to prevent slowdowns
+      if (chatHistory.length > 8) {
+          chatHistory = [chatHistory[0], ...chatHistory.slice(-6)];
+      }
     } catch (err) {
-      loading.innerText = "My head hurts. (Error)";
+      if (messagesDiv.contains(t)) messagesDiv.removeChild(t);
+      addMsg("Error: " + err.message, "ai");
     }
-    msgDiv.scrollTop = msgDiv.scrollHeight;
+    
+    inputField.disabled = false;
+    inputField.focus();
+    sendBtn.disabled = false;
   }
 
-  btn.onclick = send;
-  input.onkeypress = (e) => { if(e.key === 'Enter') send(); };
+  sendBtn.onclick = talk;
+  inputField.onkeypress = (e) => { if(e.key === 'Enter') talk(); };
   init();
 </script>
-</body>
-</html>
