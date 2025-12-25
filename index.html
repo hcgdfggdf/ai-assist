@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sharon AI (Chaos Control)</title>
+  <title>Sharon AI (Restaurant Proof?)</title>
   <style>
     :root {
       --bg-color: #121212;
@@ -136,17 +136,20 @@
       text-align: center;
     }
 
-    button {
-      background: var(--accent-color);
+    .btn {
       border: none;
       color: white;
-      padding: 0 20px;
+      padding: 8px 15px;
       border-radius: 25px;
       cursor: pointer;
       font-weight: bold;
+      transition: 0.2s;
     }
 
-    button:disabled { opacity: 0.5; }
+    #send-btn { background: var(--accent-color); flex-shrink: 0; }
+    #reset-btn { background: #444; font-size: 0.7rem; padding: 5px 10px; }
+
+    .btn:disabled { opacity: 0.3; cursor: not-allowed; }
 
     .typing { font-style: italic; opacity: 0.7; font-size: 0.8rem; }
   </style>
@@ -155,23 +158,23 @@
 
 <div class="chat-container">
   <header>
-    <strong>Sharon (Brain Config)</strong>
+    <strong>Sharon (Local AI)</strong>
     <div class="status-area">
+      <button id="reset-btn" class="btn">Wipe Memory</button>
       <div id="status-dot" class="status-dot"></div>
     </div>
   </header>
   <div id="messages">
-    <div class="message ai-msg">Waking up Sharon...</div>
+    <div class="message ai-msg" id="init-msg">Downloading Brain... (300MB+) If this fails, your WiFi is probably too weak.</div>
   </div>
   <div class="input-area">
     <div class="temp-control">
-      Chaos Level (Temp): 
+      Chaos Level: 
       <input type="number" id="temp-input" value="0.7" step="0.1" min="0.1" max="2.0">
-      <span title="0.1 = Sane, 1.0+ = Braindead">ⓘ</span>
     </div>
     <div class="controls">
       <input type="text" id="user-input" placeholder="Talk to Sharon..." disabled>
-      <button id="send-btn" disabled>Send</button>
+      <button id="send-btn" class="btn" disabled>Send</button>
     </div>
   </div>
 </div>
@@ -183,22 +186,26 @@
   const inputField = document.getElementById("user-input");
   const tempField = document.getElementById("temp-input");
   const sendBtn = document.getElementById("send-btn");
+  const resetBtn = document.getElementById("reset-btn");
   const statusDot = document.getElementById("status-dot");
 
   let generator = null;
   let chatHistory = [
-    { role: "system", content: "You are Sharon, a funny local AI assistant. You sometimes say weird things." }
+    { role: "system", content: "You are Sharon, a witty local AI. Keep it brief." }
   ];
 
   async function init() {
     try {
+      // The heavy part
       generator = await pipeline("text-generation", "Xenova/SmolLM-135M-Instruct");
+      
       statusDot.classList.add("ready");
       inputField.disabled = false;
       sendBtn.disabled = false;
-      addMessage("Brain is in. Adjust my chaos level and let's go.", "ai");
+      document.getElementById("init-msg").innerText = "Brain loaded! WiFi is no longer needed. What's up?";
     } catch (e) {
-      addMessage("Loading failed. Refresh?", "ai");
+      document.getElementById("init-msg").innerText = "❌ Download Failed. Restaurant WiFi is too weak. Try again on a stronger connection!";
+      console.error("Sharon Error:", e);
     }
   }
 
@@ -217,25 +224,23 @@
 
     addMessage(text, "user");
     chatHistory.push({ role: "user", content: text });
-    
     inputField.value = "";
-    inputField.disabled = true;
 
     const thinking = document.createElement("div");
     thinking.className = "message ai-msg typing";
-    thinking.innerText = `Sharon is thinking (Temp: ${temp})...`;
+    thinking.innerText = "Thinking...";
     messagesDiv.appendChild(thinking);
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
     try {
-      let fullPrompt = "";
+      let prompt = "";
       for (const msg of chatHistory) {
-        fullPrompt += `<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n`;
+        prompt += `<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n`;
       }
-      fullPrompt += `<|im_start|>assistant\n`;
+      prompt += `<|im_start|>assistant\n`;
 
-      const output = await generator(fullPrompt, { 
-        max_new_tokens: 80,
+      const output = await generator(prompt, { 
+        max_new_tokens: 100,
         temperature: temp,
         do_sample: true,
         stop_sequences: ["<|im_end|>"]
@@ -243,23 +248,21 @@
 
       if (messagesDiv.contains(thinking)) messagesDiv.removeChild(thinking);
 
-      const rawText = output[0].generated_text;
-      let aiResponse = rawText.split("assistant\n").pop().replace("<|im_end|>", "").trim();
-
+      let aiResponse = output[0].generated_text.split("assistant\n").pop().replace("<|im_end|>", "").trim();
       chatHistory.push({ role: "assistant", content: aiResponse });
       addMessage(aiResponse, "ai");
 
       if (chatHistory.length > 10) chatHistory = [chatHistory[0], ...chatHistory.slice(-8)];
-
     } catch (err) {
       if (messagesDiv.contains(thinking)) messagesDiv.removeChild(thinking);
-      addMessage("Brain melted. Try lowering the Temp.", "ai");
+      addMessage("Brain crash. Try wiping memory.", "ai");
     }
-
-    inputField.disabled = false;
-    sendBtn.disabled = false;
-    inputField.focus();
   }
+
+  resetBtn.onclick = () => {
+    chatHistory = [{ role: "system", content: "You are Sharon." }];
+    messagesDiv.innerHTML = '<div class="message ai-msg">Memory wiped. Who are you again?</div>';
+  };
 
   sendBtn.onclick = handleSend;
   inputField.onkeypress = (e) => { if(e.key === 'Enter') handleSend(); };
