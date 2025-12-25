@@ -6,107 +6,84 @@
   <title>Sharon AI</title>
   <style>
     :root { --bg: #0a0a0a; --card: #161616; --accent: #7c4dff; --text: #f0f0f0; }
-    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; height: 100vh; }
-    .chat-container { width: 95%; max-width: 500px; height: 85vh; background: var(--card); border-radius: 15px; display: flex; flex-direction: column; border: 1px solid #333; }
-    header { padding: 15px; background: #1f1f1f; border-bottom: 1px solid #333; display: flex; justify-content: space-between; border-radius: 15px 15px 0 0; }
-    #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-    .message { max-width: 85%; padding: 12px; border-radius: 12px; font-size: 0.95rem; }
-    .user-msg { align-self: flex-end; background: var(--accent); border-bottom-right-radius: 2px; }
-    .ai-msg { align-self: flex-start; background: #2a2a2a; border-bottom-left-radius: 2px; }
-    .status-dot { height: 10px; width: 10px; background: red; border-radius: 50%; }
-    .status-dot.ready { background: #00ff00; box-shadow: 0 0 10px #00ff00; }
-    .input-area { padding: 15px; background: #111; border-top: 1px solid #333; border-radius: 0 0 15px 15px; }
-    input[type="text"] { width: calc(100% - 100px); padding: 10px; border-radius: 20px; border: 1px solid #444; background: #000; color: white; outline: none; }
-    button { width: 80px; background: var(--accent); border: none; color: white; padding: 10px; border-radius: 20px; cursor: pointer; float: right; }
+    body { margin: 0; font-family: sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; height: 100vh; }
+    .chat-container { width: 95%; max-width: 450px; height: 80vh; background: var(--card); border-radius: 12px; display: flex; flex-direction: column; border: 1px solid #333; }
+    #messages { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+    .message { max-width: 85%; padding: 10px; border-radius: 10px; font-size: 0.9rem; }
+    .user-msg { align-self: flex-end; background: var(--accent); }
+    .ai-msg { align-self: flex-start; background: #2a2a2a; }
+    .input-area { padding: 15px; border-top: 1px solid #333; display: flex; gap: 5px; }
+    input { flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #444; background: #000; color: #fff; }
+    button { padding: 10px 15px; background: var(--accent); border: none; color: #fff; border-radius: 5px; cursor: pointer; }
     button:disabled { opacity: 0.3; }
   </style>
 </head>
 <body>
 
 <div class="chat-container">
-  <header><strong>Sharon AI</strong><div id="status-dot" class="status-dot"></div></header>
-  <div id="messages"><div class="message ai-msg" id="status-text">Attempting secure bypass...</div></div>
+  <div id="messages"><div class="message ai-msg" id="status">Loading...</div></div>
   <div class="input-area">
-    <input type="text" id="user-input" placeholder="Loading model..." disabled>
-    <button id="send-btn" disabled>Send</button>
+    <input type="text" id="input" placeholder="Wait for it..." disabled>
+    <button id="btn" disabled>Send</button>
   </div>
 </div>
 
 <script type="module">
-  // We use the most compatible version of the library
-  import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0";
+  // Using the most stable production build
+  import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2";
 
-  // --- THE ULTIMATE COMPATIBILITY SETTINGS ---
+  // Force single-thread and no-cache to prevent the 100% hang
   env.allowLocalModels = false;
-  env.allowRemoteModels = true;
-  
-  // These 3 lines fix the GitHub Pages "Access Denied / SharedArrayBuffer" issues
-  env.backends.onnx.wasm.numThreads = 1; 
-  env.backends.onnx.wasm.proxy = false;
-  env.useBrowserCache = false; 
+  env.backends.onnx.wasm.numThreads = 1;
+  env.backends.onnx.wasm.simd = false; // Disabling SIMD fixes hangs on older/mobile browsers
 
-  const messagesDiv = document.getElementById("messages");
-  const inputField = document.getElementById("user-input");
-  const sendBtn = document.getElementById("send-btn");
-  const statusDot = document.getElementById("status-dot");
-  const statusText = document.getElementById("status-text");
+  const msgDiv = document.getElementById("messages");
+  const status = document.getElementById("status");
+  const input = document.getElementById("input");
+  const btn = document.getElementById("btn");
 
-  let generator = null;
-  let chatHistory = [{ role: "system", content: "You are Sharon, a sarcastic AI assistant." }];
+  let pipe = null;
 
   async function init() {
     try {
-      // We switch to a slightly older but more stable community export
-      generator = await pipeline("text-generation", "Xenova/tiny-random-LlamaForCausalLM", {
-        progress_callback: (p) => {
-          if (p.status === 'progress') {
-            statusText.innerText = `Fetching: ${Math.round(p.progress)}%`;
-          }
-        }
-      });
-
-      statusDot.classList.add("ready");
-      statusText.innerText = "I'm alive. Say something smart.";
-      inputField.disabled = false;
-      sendBtn.disabled = false;
-      inputField.placeholder = "Talk to me...";
+      // Swapping to a 'Text2Text' model - much more stable for web than 'Text-Generation'
+      pipe = await pipeline("text2text-generation", "Xenova/flan-t5-small");
+      
+      status.innerText = "Sharon is online. Be quick.";
+      input.disabled = false;
+      btn.disabled = false;
+      input.placeholder = "Say something...";
     } catch (e) {
-      console.error(e);
-      statusText.innerText = "Bypass failed. Try refreshing or use Chrome.";
+      status.innerText = "Error: " + e.message;
     }
   }
 
-  async function talk() {
-    const val = inputField.value.trim();
-    if (!val) return;
+  async function send() {
+    const text = input.value.trim();
+    if (!text) return;
 
-    const userDiv = document.createElement("div");
-    userDiv.className = "message user-msg";
-    userDiv.innerText = val;
-    messagesDiv.appendChild(userDiv);
-    
-    chatHistory.push({ role: "user", content: val });
-    inputField.value = "";
-    inputField.disabled = true;
+    const u = document.createElement("div");
+    u.className = "message user-msg";
+    u.innerText = text;
+    msgDiv.appendChild(u);
+    input.value = "";
+
+    const loading = document.createElement("div");
+    loading.className = "message ai-msg";
+    loading.innerText = "...";
+    msgDiv.appendChild(loading);
 
     try {
-      const output = await generator(val, { max_new_tokens: 50 });
-      const response = output[0].generated_text;
-      
-      const aiDiv = document.createElement("div");
-      aiDiv.className = "message ai-msg";
-      aiDiv.innerText = response.replace(val, "").trim() || "I'm speechless.";
-      messagesDiv.appendChild(aiDiv);
+      const res = await pipe(text, { max_new_tokens: 50 });
+      loading.innerText = res[0].generated_text || "Whatever.";
     } catch (err) {
-      console.error(err);
+      loading.innerText = "My head hurts. (Error)";
     }
-    
-    inputField.disabled = false;
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    msgDiv.scrollTop = msgDiv.scrollHeight;
   }
 
-  sendBtn.onclick = talk;
-  inputField.onkeypress = (e) => { if(e.key === 'Enter') talk(); };
+  btn.onclick = send;
+  input.onkeypress = (e) => { if(e.key === 'Enter') send(); };
   init();
 </script>
 </body>
