@@ -5,34 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sharon AI (Chaos Control)</title>
   <style>
-    :root {
-      --bg-color: #121212; --card-bg: #1e1e1e; --accent-color: #7c4dff;
-      --text-color: #e0e0e0; --user-bubble: #7c4dff; --ai-bubble: #333333;
-    }
-    body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg-color); color: var(--text-color); display: flex; justify-content: center; align-items: center; height: 100vh; }
-    .chat-container { width: 100%; max-width: 480px; height: 85vh; background: var(--card-bg); border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #333; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-    header { padding: 15px 20px; background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
-    .status-dot { height: 10px; width: 10px; background-color: #ff5252; border-radius: 50%; transition: 0.3s; }
-    .status-dot.ready { background-color: #00e676; box-shadow: 0 0 8px #00e676; }
-    #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
-    .message { max-width: 85%; padding: 10px 14px; border-radius: 15px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; }
-    .user-msg { align-self: flex-end; background: var(--user-bubble); color: white; border-bottom-right-radius: 2px; }
-    .ai-msg { align-self: flex-start; background: var(--ai-bubble); border-bottom-left-radius: 2px; }
-    .input-area { padding: 15px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid #333; background: #1a1a1a; }
-    .controls { display: flex; gap: 10px; }
+    :root { --bg: #121212; --card: #1e1e1e; --accent: #7c4dff; --text: #e0e0e0; }
+    body { margin: 0; font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; height: 100vh; }
+    .chat-container { width: 95%; max-width: 480px; height: 85vh; background: var(--card); border-radius: 16px; display: flex; flex-direction: column; border: 1px solid #333; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; }
+    header { padding: 15px; background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+    #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+    .message { max-width: 85%; padding: 10px 14px; border-radius: 15px; font-size: 0.95rem; }
+    .user-msg { align-self: flex-end; background: var(--accent); color: white; }
+    .ai-msg { align-self: flex-start; background: #333; }
+    .status-dot { height: 10px; width: 10px; background: #ff5252; border-radius: 50%; }
+    .status-dot.ready { background: #00e676; box-shadow: 0 0 8px #00e676; }
+    .input-area { padding: 15px; background: #1a1a1a; border-top: 1px solid #333; }
+    .controls { display: flex; gap: 10px; margin-top: 10px; }
     input[type="text"] { flex: 1; padding: 12px; border-radius: 25px; border: 1px solid #444; background: #121212; color: white; outline: none; }
-    button { background: var(--accent-color); border: none; color: white; padding: 0 20px; border-radius: 25px; cursor: pointer; font-weight: bold; transition: 0.2s; }
-    button:disabled { opacity: 0.4; cursor: not-allowed; }
-    .typing { font-style: italic; opacity: 0.7; font-size: 0.8rem; }
+    button { background: var(--accent); border: none; color: white; padding: 0 20px; border-radius: 25px; cursor: pointer; font-weight: bold; }
+    button:disabled { opacity: 0.3; }
   </style>
 </head>
 <body>
 
 <div class="chat-container">
-  <header><strong>Sharon (Brain Config)</strong><div class="status-dot" id="status-dot"></div></header>
-  <div id="messages"><div class="message ai-msg" id="status-text">Connecting to Hugging Face...</div></div>
+  <header><strong>Sharon AI</strong><div id="status-dot" class="status-dot"></div></header>
+  <div id="messages"><div class="message ai-msg" id="status-text">Checking security headers...</div></div>
   <div class="input-area">
-    <div style="font-size: 0.75rem; color: #888;">Chaos Level: <input type="number" id="temp-input" value="0.7" step="0.1" min="0.1" max="2.0" style="width:40px; background:#121212; color:#7c4dff; border:1px solid #444; border-radius:4px;"></div>
+    <div style="font-size: 0.7rem; color: #888;">Chaos: <input type="number" id="temp-input" value="0.7" step="0.1" style="width:40px; background:none; border:1px solid #444; color:white;"></div>
     <div class="controls">
       <input type="text" id="user-input" placeholder="Waking up..." disabled>
       <button id="send-btn" disabled>Send</button>
@@ -41,43 +37,39 @@
 </div>
 
 <script type="module">
-  // Using the latest stable build
-  import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2";
+  // Use the @huggingface/transformers (the new official name)
+  import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0";
 
-  // Essential for web hosting like GitHub Pages
+  // --- CRITICAL COMPATIBILITY FIXES ---
   env.allowRemoteModels = true;
-  env.useBrowserCache = true;
-
+  env.backends.onnx.wasm.proxy = false; // Prevents the "Worker" security block
+  env.backends.onnx.wasm.numThreads = 1; // Disables multi-threading to avoid SharedArrayBuffer errors
+  
   const messagesDiv = document.getElementById("messages");
   const inputField = document.getElementById("user-input");
   const sendBtn = document.getElementById("send-btn");
   const statusDot = document.getElementById("status-dot");
   const statusText = document.getElementById("status-text");
-  const tempInput = document.getElementById("temp-input");
 
   let generator = null;
-  let chatHistory = [{ role: "system", content: "You are Sharon, a sarcastic, funny, and slightly chaotic AI." }];
+  let chatHistory = [{ role: "system", content: "You are Sharon, a sarcastic AI." }];
 
   async function init() {
     try {
-      statusText.innerText = "Sharon is packing her bags (Downloading 135MB)...";
+      statusText.innerText = "Downloading brain (135MB)...";
       
-      generator = await pipeline("text-generation", "Xenova/SmolLM-135M-Instruct", {
-        progress_callback: (p) => {
-          if (p.status === 'progress') {
-            statusText.innerText = `Loading Brain Cells: ${Math.round(p.progress)}%`;
-          }
-        }
+      generator = await pipeline("text-generation", "onnx-community/SmolLM2-135M-Instruct-v0.2", {
+        device: "wasm", // Force CPU/WASM for max compatibility
       });
 
       statusDot.classList.add("ready");
-      statusText.innerText = "I'm awake. My brain is small (135M) but I'm ready to talk.";
+      statusText.innerText = "Sharon is online. Type something below.";
       inputField.disabled = false;
       sendBtn.disabled = false;
-      inputField.placeholder = "Say something...";
+      inputField.placeholder = "Talk to Sharon...";
     } catch (e) {
       console.error(e);
-      statusText.innerText = "CRITICAL ERROR: Browser blocked the model. Ensure you are using HTTPS (GitHub Pages) and not a local file.";
+      statusText.innerText = "Error: " + e.message.substring(0, 50) + "... Try refreshing or using Chrome.";
     }
   }
 
@@ -97,46 +89,29 @@
     chatHistory.push({ role: "user", content: val });
     inputField.value = "";
     inputField.disabled = true;
-    sendBtn.disabled = true;
 
     const t = document.createElement("div");
-    t.className = "message ai-msg typing";
+    t.className = "message ai-msg";
     t.innerText = "Sharon is thinking...";
     messagesDiv.appendChild(t);
 
     try {
-      let prompt = "";
-      for (const m of chatHistory) {
-        prompt += `<|im_start|>${m.role}\n${m.content}<|im_end|>\n`;
-      }
-      prompt += `<|im_start|>assistant\n`;
-
-      const out = await generator(prompt, { 
-        max_new_tokens: 100, 
-        temperature: parseFloat(tempInput.value),
-        do_sample: true,
-        stop_sequences: ["<|im_end|>", "<|im_start|>"] 
+      const output = await generator(chatHistory, { 
+        max_new_tokens: 60, 
+        temperature: parseFloat(document.getElementById("temp-input").value),
+        do_sample: true
       });
 
-      if (messagesDiv.contains(t)) messagesDiv.removeChild(t);
+      messagesDiv.removeChild(t);
+      const response = output[0].generated_text.at(-1).content;
       
-      const raw = out[0].generated_text;
-      // Precise extraction of the new response
-      const response = raw.substring(prompt.length).split("<|im_end|>")[0].trim();
-      
-      addMsg(response || "I've got nothing. Try increasing Chaos?", "ai");
+      addMsg(response, "ai");
       chatHistory.push({ role: "assistant", content: response });
-
-      // Keep context short for speed
-      if (chatHistory.length > 10) chatHistory = [chatHistory[0], ...chatHistory.slice(-8)];
-
+      if (chatHistory.length > 10) chatHistory = [chatHistory[0], ...chatHistory.slice(-6)];
     } catch (err) {
-      console.error(err);
-      if (messagesDiv.contains(t)) messagesDiv.removeChild(t);
-      addMsg("Brain short-circuited. Try refreshing.", "ai");
+      addMsg("Brain cramp! Error: " + err.message, "ai");
     }
     inputField.disabled = false;
-    sendBtn.disabled = false;
     inputField.focus();
   }
 
