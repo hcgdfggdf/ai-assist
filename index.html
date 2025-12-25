@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sharon Voice Assistant</title>
+</head>
+<body>
+<h1>Sharon (Voice AI)</h1>
+<p>Say "Hey Sharon" to wake her up.</p>
+
+<script type="module">
+import { pipeline } from "https://cdn.jsdelivr.net/npm/@xenova/transformers";
+
+const generator = await pipeline("text-generation", "Xenova/distilgpt2");
+
+const synth = window.speechSynthesis;
+function speak(text) {
+    if (synth.speaking) synth.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    synth.speak(utter);
+}
+
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = new Recognition();
+recognition.continuous = true;
+recognition.interimResults = false;
+recognition.lang = "en-US";
+
+let listeningForCommand = false;
+
+recognition.onresult = async (event) => {
+    const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
+    console.log("Heard:", transcript);
+
+    if (!listeningForCommand && transcript.includes("hey sharon")) {
+        listeningForCommand = true;
+        speak("Yes?");
+    } else if (listeningForCommand) {
+        listeningForCommand = false;
+        speak("Thinking...");
+        const res = await generator(transcript, { max_new_tokens: 50 });
+        speak(res[0].generated_text);
+    }
+};
+
+recognition.start();
+</script>
+</body>
+</html>
