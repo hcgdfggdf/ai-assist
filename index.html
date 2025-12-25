@@ -226,6 +226,7 @@
 
   // 2. UI Helper: Add Message
   function addMessage(text, sender) {
+    if(!text) return; // Don't add empty messages
     const div = document.createElement("div");
     div.classList.add("message");
     div.classList.add(sender === "user" ? "user-msg" : "ai-msg");
@@ -253,27 +254,43 @@
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
     try {
-      // Run the model
-      const output = await generator(text, {
-        max_new_tokens: 40,
-        // Temperature controls randomness
-        temperature: 0.7 
+      // PROMPT ENGINEERING:
+      // distilgpt2 is dumb. We must force it into a Q&A format.
+      const prompt = `Question: ${text}\nAnswer:`;
+
+      const output = await generator(prompt, {
+        max_new_tokens: 45,
+        temperature: 0.6,
+        do_sample: true,
+        // Stop if it tries to write another Question
+        stop_sequences: ["Question:"]
       });
 
       // Remove loading text
-      messagesDiv.removeChild(loadingDiv);
+      if(messagesDiv.contains(loadingDiv)){
+        messagesDiv.removeChild(loadingDiv);
+      }
 
-      // distilgpt2 often repeats the prompt. 
-      // This is a raw completion model, so we display the whole result or substring.
-      let aiText = output[0].generated_text;
+      // CLEANUP:
+      // The model output includes the input. We need to split it.
+      let fullOutput = output[0].generated_text;
       
-      // Optional: Clean up response if it just echoes the prompt perfectly
-      // if (aiText.startsWith(text)) aiText = aiText.substring(text.length);
+      // Look for "Answer:" and take everything after it
+      let splitParts = fullOutput.split("Answer:");
+      let aiResponse = "";
 
-      addMessage(aiText || "...", "ai");
+      if (splitParts.length > 1) {
+        aiResponse = splitParts[1];
+      } else {
+        // Fallback if model ignored the format, just show the new text
+        aiResponse = fullOutput.substring(prompt.length);
+      }
+
+      // .trim() removes the giant empty space!
+      addMessage(aiResponse.trim(), "ai");
 
     } catch (err) {
-      messagesDiv.removeChild(loadingDiv);
+      if(messagesDiv.contains(loadingDiv)) messagesDiv.removeChild(loadingDiv);
       addMessage("I got confused. Try again!", "ai");
       console.error(err);
     }
