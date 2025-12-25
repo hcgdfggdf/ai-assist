@@ -1,35 +1,297 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Sharon (Local AI)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sharon AI</title>
+  <style>
+    /* Modern Reset & Base Styles */
+    :root {
+      --bg-color: #121212;
+      --card-bg: #1e1e1e;
+      --accent-color: #7c4dff;
+      --text-color: #e0e0e0;
+      --user-bubble: #7c4dff;
+      --ai-bubble: #333333;
+    }
+
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    /* Chat Container */
+    .chat-container {
+      width: 100%;
+      max-width: 450px;
+      height: 80vh;
+      background-color: var(--card-bg);
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid #333;
+    }
+
+    /* Header */
+    header {
+      padding: 20px;
+      background: rgba(30, 30, 30, 0.95);
+      border-bottom: 1px solid #333;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    h1 {
+      font-size: 1.2rem;
+      margin: 0;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      height: 10px;
+      width: 10px;
+      background-color: #ff5252; /* Red = Loading */
+      border-radius: 50%;
+      box-shadow: 0 0 8px #ff5252;
+      transition: background-color 0.3s;
+    }
+
+    .status-dot.ready {
+      background-color: #00e676; /* Green = Ready */
+      box-shadow: 0 0 8px #00e676;
+    }
+
+    .status-text {
+      font-size: 0.8rem;
+      color: #888;
+      margin-right: 8px;
+    }
+
+    /* Messages Area */
+    #messages {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+
+    /* Scrollbar styling */
+    #messages::-webkit-scrollbar { width: 6px; }
+    #messages::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+    /* Bubbles */
+    .message {
+      max-width: 80%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      line-height: 1.4;
+      font-size: 0.95rem;
+      word-wrap: break-word;
+      animation: popIn 0.3s ease;
+    }
+
+    @keyframes popIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .user-msg {
+      align-self: flex-end;
+      background-color: var(--user-bubble);
+      color: white;
+      border-bottom-right-radius: 2px;
+    }
+
+    .ai-msg {
+      align-self: flex-start;
+      background-color: var(--ai-bubble);
+      color: var(--text-color);
+      border-bottom-left-radius: 2px;
+    }
+
+    /* Input Area */
+    .input-area {
+      padding: 15px;
+      background-color: var(--card-bg);
+      border-top: 1px solid #333;
+      display: flex;
+      gap: 10px;
+    }
+
+    input {
+      flex: 1;
+      padding: 12px;
+      border-radius: 25px;
+      border: 1px solid #444;
+      background-color: #121212;
+      color: white;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus {
+      border-color: var(--accent-color);
+    }
+
+    button {
+      background-color: var(--accent-color);
+      border: none;
+      color: white;
+      padding: 0 20px;
+      border-radius: 25px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    button:hover:not(:disabled) {
+      opacity: 0.9;
+    }
+
+    /* Loading ellipsis */
+    .typing-indicator {
+      font-style: italic;
+      color: #888;
+      font-size: 0.8rem;
+    }
+  </style>
 </head>
 <body>
-<h1>Sharon (Offline-ish)</h1>
-<button id="ask">Ask Sharon</button>
-<p id="out"></p>
+
+<div class="chat-container">
+  <header>
+    <h1>Sharon (Local)</h1>
+    <div style="display:flex; align-items:center;">
+      <span id="status-text" class="status-text">Loading Model...</span>
+      <div id="status-dot" class="status-dot"></div>
+    </div>
+  </header>
+
+  <div id="messages">
+    <div class="message ai-msg">Hello! I'm running entirely in your browser. It might take a moment to wake me up.</div>
+  </div>
+
+  <div class="input-area">
+    <input type="text" id="user-input" placeholder="Type a message..." disabled>
+    <button id="send-btn" disabled>Send</button>
+  </div>
+</div>
 
 <script type="module">
-import { pipeline } from "https://cdn.jsdelivr.net/npm/@xenova/transformers";
+  import { pipeline } from "https://cdn.jsdelivr.net/npm/@xenova/transformers";
 
-const output = document.getElementById("out");
-output.innerText = "Loading Sharon... (first time slow 😭)";
+  // Elements
+  const messagesDiv = document.getElementById("messages");
+  const inputField = document.getElementById("user-input");
+  const sendBtn = document.getElementById("send-btn");
+  const statusDot = document.getElementById("status-dot");
+  const statusText = document.getElementById("status-text");
 
-// load SMALL model
-const generator = await pipeline(
-  "text-generation",
-  "Xenova/distilgpt2"
-);
+  let generator = null;
 
-output.innerText = "Sharon ready 🫩";
+  // 1. Initialize Model
+  async function initModel() {
+    try {
+      // Using distilgpt2 (small and fast)
+      generator = await pipeline("text-generation", "Xenova/distilgpt2");
+      
+      // Update UI
+      statusDot.classList.add("ready");
+      statusText.innerText = "Online";
+      inputField.disabled = false;
+      sendBtn.disabled = false;
+      inputField.focus();
+    } catch (err) {
+      statusText.innerText = "Error";
+      addMessage("Failed to load model. Check console.", "ai");
+      console.error(err);
+    }
+  }
 
-document.getElementById("ask").onclick = async () => {
-  output.innerText = "Thinking...";
-  const res = await generator("Hey Sharon, what's 1 plus 1?", {
-    max_new_tokens: 30
+  // 2. UI Helper: Add Message
+  function addMessage(text, sender) {
+    const div = document.createElement("div");
+    div.classList.add("message");
+    div.classList.add(sender === "user" ? "user-msg" : "ai-msg");
+    div.innerText = text;
+    messagesDiv.appendChild(div);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight; // Auto scroll
+  }
+
+  // 3. Handle Send
+  async function handleSend() {
+    const text = inputField.value.trim();
+    if (!text) return;
+
+    // Add user message
+    addMessage(text, "user");
+    inputField.value = "";
+    inputField.disabled = true;
+    sendBtn.disabled = true;
+
+    // Create a placeholder for AI response
+    const loadingDiv = document.createElement("div");
+    loadingDiv.classList.add("message", "ai-msg", "typing-indicator");
+    loadingDiv.innerText = "Sharon is thinking...";
+    messagesDiv.appendChild(loadingDiv);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+    try {
+      // Run the model
+      const output = await generator(text, {
+        max_new_tokens: 40,
+        // Temperature controls randomness
+        temperature: 0.7 
+      });
+
+      // Remove loading text
+      messagesDiv.removeChild(loadingDiv);
+
+      // distilgpt2 often repeats the prompt. 
+      // This is a raw completion model, so we display the whole result or substring.
+      let aiText = output[0].generated_text;
+      
+      // Optional: Clean up response if it just echoes the prompt perfectly
+      // if (aiText.startsWith(text)) aiText = aiText.substring(text.length);
+
+      addMessage(aiText || "...", "ai");
+
+    } catch (err) {
+      messagesDiv.removeChild(loadingDiv);
+      addMessage("I got confused. Try again!", "ai");
+      console.error(err);
+    }
+
+    inputField.disabled = false;
+    sendBtn.disabled = false;
+    inputField.focus();
+  }
+
+  // Event Listeners
+  sendBtn.addEventListener("click", handleSend);
+  inputField.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") handleSend();
   });
-  output.innerText = res[0].generated_text;
-};
+
+  // Start
+  initModel();
 </script>
+
 </body>
 </html>
