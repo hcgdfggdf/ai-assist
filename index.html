@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sharon AI</title>
+    <title>Sharron AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 h-screen flex flex-col font-sans">
 
     <header class="bg-white border-b p-4 flex justify-between items-center shadow-sm">
-        <h1 class="text-xl font-bold text-blue-600">Sharon AI</h1>
+        <h1 class="text-xl font-bold text-blue-600">Sharron AI</h1>
         <div id="status" class="text-xs font-mono bg-gray-200 px-2 py-1 rounded">Initializing...</div>
     </header>
 
@@ -21,7 +21,7 @@
 
     <div class="p-4 bg-white border-t">
         <div class="max-w-2xl mx-auto flex gap-2">
-            <input type="text" id="user-input" placeholder="Loading Sharon..." disabled
+            <input type="text" id="user-input" placeholder="Loading Sharron..." disabled
                 class="flex-1 border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-50">
             <button id="send-btn" disabled class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold disabled:opacity-50">
                 Ask
@@ -30,7 +30,6 @@
     </div>
 
     <script type="module">
-        // Using the updated v3 library from Hugging Face
         import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0';
 
         const chatBox = document.getElementById('chat-box');
@@ -42,19 +41,17 @@
 
         async function init() {
             try {
-                // We use a specific ONNX-optimized model for better browser compatibility
                 generator = await pipeline('text-generation', 'onnx-community/SmolLM2-135M-Instruct-ONNX', {
-                    device: 'webgpu', // Tries to use your graphics card for speed
+                    device: 'webgpu', 
                 });
                 
                 status.innerText = "Ready";
                 status.className = "text-xs font-mono bg-green-200 text-green-800 px-2 py-1 rounded";
-                userInput.placeholder = "Say something to Sharon...";
+                userInput.placeholder = "Say something to Sharron...";
                 userInput.disabled = false;
                 sendBtn.disabled = false;
             } catch (err) {
                 console.error(err);
-                // Fallback to CPU if WebGPU fails
                 status.innerText = "WebGPU failed, trying CPU...";
                 generator = await pipeline('text-generation', 'onnx-community/SmolLM2-135M-Instruct-ONNX');
                 status.innerText = "Ready (CPU Mode)";
@@ -68,17 +65,23 @@
             appendMsg('You', prompt, 'bg-white');
             userInput.value = '';
             
-            const thinkingDiv = appendMsg('Sharon', 'Thinking...', 'bg-blue-50');
+            const thinkingDiv = appendMsg('Sharron', 'Thinking...', 'bg-blue-50');
             
-            // Format for an "Instruct" model
-            const messages = [{ role: "user", content: prompt }];
+            // Added a system message here so the AI knows its identity
+            const messages = [
+                { role: "system", content: "Your name is Sharron. You are a helpful AI assistant." },
+                { role: "user", content: prompt }
+            ];
             
             const output = await generator(messages, { 
                 max_new_tokens: 128,
                 temperature: 0.7 
             });
 
-            thinkingDiv.innerHTML = `<b>Sharon:</b> ${output[0].generated_text[1].content}`;
+            // The output index changes slightly because we added a system message
+            const responseText = output[0].generated_text[output[0].generated_text.length - 1].content;
+            
+            thinkingDiv.innerHTML = `<b>Sharron:</b> ${responseText}`;
             chatBox.scrollTop = chatBox.scrollHeight;
         }
 
