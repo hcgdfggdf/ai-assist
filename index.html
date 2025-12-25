@@ -10,25 +10,27 @@
     .chat-container { width: 95%; max-width: 480px; height: 85vh; background: var(--card); border-radius: 16px; display: flex; flex-direction: column; border: 1px solid #333; box-shadow: 0 10px 30px rgba(0,0,0,0.5); overflow: hidden; }
     header { padding: 15px; background: #252525; border-bottom: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
     #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
-    .message { max-width: 85%; padding: 10px 14px; border-radius: 15px; font-size: 0.95rem; line-height: 1.4; }
+    .message { max-width: 85%; padding: 10px 14px; border-radius: 15px; font-size: 0.95rem; line-height: 1.4; word-wrap: break-word; }
     .user-msg { align-self: flex-end; background: var(--accent); color: white; border-bottom-right-radius: 2px; }
     .ai-msg { align-self: flex-start; background: #333; border-bottom-left-radius: 2px; }
-    .status-dot { height: 10px; width: 10px; background: #ff5252; border-radius: 50%; }
+    .status-dot { height: 10px; width: 10px; background: #ff5252; border-radius: 50%; transition: background 0.3s; }
     .status-dot.ready { background: #00e676; box-shadow: 0 0 8px #00e676; }
     .input-area { padding: 15px; background: #1a1a1a; border-top: 1px solid #333; }
     .controls { display: flex; gap: 10px; margin-top: 10px; }
     input[type="text"] { flex: 1; padding: 12px; border-radius: 25px; border: 1px solid #444; background: #121212; color: white; outline: none; }
     button { background: var(--accent); border: none; color: white; padding: 0 20px; border-radius: 25px; cursor: pointer; font-weight: bold; }
-    button:disabled { opacity: 0.3; }
+    button:disabled { opacity: 0.3; cursor: not-allowed; }
   </style>
 </head>
 <body>
 
 <div class="chat-container">
   <header><strong>Sharon AI</strong><div id="status-dot" class="status-dot"></div></header>
-  <div id="messages"><div class="message ai-msg" id="status-text">Bypassing security filters...</div></div>
+  <div id="messages">
+    <div class="message ai-msg" id="status-text">Bypassing security filters...</div>
+  </div>
   <div class="input-area">
-    <div style="font-size: 0.7rem; color: #888;">Chaos: <input type="number" id="temp-input" value="0.7" step="0.1" style="width:40px; background:none; border:1px solid #444; color:white;"></div>
+    <div style="font-size: 0.7rem; color: #888;">Chaos: <input type="number" id="temp-input" value="0.7" min="0.1" max="1.5" step="0.1" style="width:40px; background:none; border:1px solid #444; color:white;"></div>
     <div class="controls">
       <input type="text" id="user-input" placeholder="Waking up..." disabled>
       <button id="send-btn" disabled>Send</button>
@@ -37,15 +39,17 @@
 </div>
 
 <script type="module">
-  // Import the most recent Transformers.js build
+  // Using version 3.x of Transformers.js
   import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.2.1";
 
-  // --- COMPATIBILITY FIXES FOR GITHUB PAGES ---
+  // --- CONFIGURATION ---
+  // Disable looking for models locally; force download from Hugging Face Hub
+  env.allowLocalModels = false; 
   env.allowRemoteModels = true;
+  
+  // WASM compatibility fixes
   env.backends.onnx.wasm.proxy = false; 
   env.backends.onnx.wasm.numThreads = 1;
-  // This line often fixes the "Unauthorized" error by ensuring headers are clean
-  env.remoteHost = "https://huggingface.co/"; 
 
   const messagesDiv = document.getElementById("messages");
   const inputField = document.getElementById("user-input");
@@ -58,10 +62,11 @@
 
   async function init() {
     try {
-      statusText.innerText = "Requesting brain cells from the cloud...";
+      statusText.innerText = "Downloading brain cells (SmolLM2)...";
       
-      // Using a slightly different path that often has better CORS permissions
+      // Initialize the pipeline
       generator = await pipeline("text-generation", "onnx-community/SmolLM2-135M-Instruct", {
+        device: "wasm", // Ensure it runs in the browser via WASM
         progress_callback: (p) => {
           if (p.status === 'progress') {
             statusText.innerText = `Downloading: ${Math.round(p.progress)}%`;
@@ -76,7 +81,8 @@
       inputField.placeholder = "Say something...";
     } catch (e) {
       console.error(e);
-      statusText.innerText = "Access Denied. Try a different browser or click the URL again.";
+      statusText.innerText = "Failed to load. Check console or try a different browser.";
+      statusText.style.color = "#ff5252";
     }
   }
 
@@ -92,39 +98,54 @@
     const val = inputField.value.trim();
     if (!val || !generator) return;
 
+    // UI Update
     addMsg(val, "user");
     chatHistory.push({ role: "user", content: val });
     inputField.value = "";
     inputField.disabled = true;
+    sendBtn.disabled = true;
 
+    // Temporary thinking bubble
     const t = document.createElement("div");
     t.className = "message ai-msg";
     t.innerText = "Sharon is thinking...";
     messagesDiv.appendChild(t);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
     try {
       const output = await generator(chatHistory, { 
-        max_new_tokens: 60, 
-        temperature: parseFloat(document.getElementById("temp-input").value),
-        do_sample: true
+        max_new_tokens: 80, 
+        temperature: parseFloat(document.getElementById("temp-input").value) || 0.7,
+        do_sample: true,
+        return_full_text: false
       });
 
       if (messagesDiv.contains(t)) messagesDiv.removeChild(t);
+      
+      // Get response from the chat-style output
       const response = output[0].generated_text.at(-1).content;
       
       addMsg(response, "ai");
       chatHistory.push({ role: "assistant", content: response });
-      if (chatHistory.length > 8) chatHistory = [chatHistory[0], ...chatHistory.slice(-6)];
+      
+      // Trim history to save memory
+      if (chatHistory.length > 10) {
+        chatHistory = [chatHistory[0], ...chatHistory.slice(-8)];
+      }
     } catch (err) {
-      addMsg("Error: " + err.message, "ai");
+      if (messagesDiv.contains(t)) messagesDiv.removeChild(t);
+      addMsg("Critical Error: " + err.message, "ai");
     }
+    
     inputField.disabled = false;
-    inputField.focus();
     sendBtn.disabled = false;
+    inputField.focus();
   }
 
   sendBtn.onclick = talk;
   inputField.onkeypress = (e) => { if(e.key === 'Enter') talk(); };
+  
+  // Start the initialization
   init();
 </script>
 </body>
