@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sharon AI (The Evolution)</title>
+  <title>Sharon AI (Memory Edition)</title>
   <style>
     :root {
       --bg-color: #121212;
@@ -127,11 +127,11 @@
 
 <div class="chat-container">
   <header>
-    <strong>Sharon (Local AI)</strong>
+    <strong>Sharon (Smart Local)</strong>
     <div id="status-dot" class="status-dot"></div>
   </header>
   <div id="messages">
-    <div class="message ai-msg">Sharon is evolving... please wait for the green light!</div>
+    <div class="message ai-msg">Installing a bigger brain... one sec.</div>
   </div>
   <div class="input-area">
     <input type="text" id="user-input" placeholder="Talk to Sharon..." disabled>
@@ -147,23 +147,25 @@
   const sendBtn = document.getElementById("send-btn");
   const statusDot = document.getElementById("status-dot");
 
-  let pipe = null;
+  let generator = null;
+  // This array stores the conversation so Sharon has memory
+  let chatHistory = [
+    { role: "system", content: "You are Sharon, a witty and smart local AI assistant. Keep responses concise and friendly." }
+  ];
 
   async function init() {
     try {
-      // Switching to LaMini-Flan-T5: much more "sane" and better at chatting
-      pipe = await pipeline("text2text-generation", "Xenova/LaMini-Flan-T5-77M");
+      // SmolLM-135M is a high-quality small model that understands chat formats
+      generator = await pipeline("text-generation", "Xenova/SmolLM-135M-Instruct");
       
       statusDot.classList.add("ready");
       inputField.disabled = false;
       sendBtn.disabled = false;
       
-      const welcome = document.createElement("div");
-      welcome.className = "message ai-msg";
-      welcome.innerText = "Evolution complete. I'm sane now (mostly). What's up?";
-      messagesDiv.appendChild(welcome);
+      addMessage("Brain upgrade successful. I can remember things now. What's on your mind?", "ai");
     } catch (e) {
       console.error(e);
+      addMessage("Brain upgrade failed. Check your internet/console.", "ai");
     }
   }
 
@@ -177,25 +179,62 @@
 
   async function handleSend() {
     const text = inputField.value.trim();
-    if (!text || !pipe) return;
+    if (!text || !generator) return;
 
+    // 1. Add to UI and Memory
     addMessage(text, "user");
-    inputField.value = "";
+    chatHistory.push({ role: "user", content: text });
     
-    // Add "thinking" bubble
+    inputField.value = "";
+    inputField.disabled = true;
+
+    // 2. Show thinking state
     const thinking = document.createElement("div");
     thinking.className = "message ai-msg typing";
     thinking.innerText = "Sharon is thinking...";
     messagesDiv.appendChild(thinking);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
-    const res = await pipe(text, { 
-      max_new_tokens: 50,
-      temperature: 0.7,
-      do_sample: true 
-    });
+    try {
+      // 3. Construct the prompt using the whole history
+      let fullPrompt = "";
+      for (const msg of chatHistory) {
+        fullPrompt += `<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n`;
+      }
+      fullPrompt += `<|im_start|>assistant\n`;
 
-    messagesDiv.removeChild(thinking);
-    addMessage(res[0].generated_text, "ai");
+      // 4. Generate response
+      const output = await generator(fullPrompt, { 
+        max_new_tokens: 100,
+        temperature: 0.7,
+        do_sample: true,
+        stop_sequences: ["<|im_end|>"]
+      });
+
+      messagesDiv.removeChild(thinking);
+
+      // 5. Extract only the new assistant text
+      const rawText = output[0].generated_text;
+      let aiResponse = rawText.split("assistant\n").pop().replace("<|im_end|>", "").trim();
+
+      // 6. Save to Memory and Show UI
+      chatHistory.push({ role: "assistant", content: aiResponse });
+      addMessage(aiResponse, "ai");
+
+      // Keep memory from getting too long (keep last 10 messages)
+      if (chatHistory.length > 11) {
+        chatHistory = [chatHistory[0], ...chatHistory.slice(-10)];
+      }
+
+    } catch (err) {
+      console.error(err);
+      if (messagesDiv.contains(thinking)) messagesDiv.removeChild(thinking);
+      addMessage("My brain short-circuited. Try again?", "ai");
+    }
+
+    inputField.disabled = false;
+    sendBtn.disabled = false;
+    inputField.focus();
   }
 
   sendBtn.onclick = handleSend;
