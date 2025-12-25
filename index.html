@@ -16,7 +16,7 @@
 
     body {
       margin: 0;
-      font-family: 'Segoe UI', sans-serif;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background-color: var(--bg-color);
       color: var(--text-color);
       display: flex;
@@ -78,6 +78,7 @@
       font-size: 0.95rem;
       line-height: 1.4;
       word-wrap: break-word;
+      white-space: pre-wrap;
     }
 
     .user-msg {
@@ -146,7 +147,7 @@
       font-weight: bold;
     }
 
-    button:disabled { opacity: 0.5; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
 
     .typing { font-style: italic; opacity: 0.7; font-size: 0.8rem; }
   </style>
@@ -161,23 +162,27 @@
     </div>
   </header>
   <div id="messages">
-    <div class="message ai-msg">Waking up Sharon...</div>
+    <div class="message ai-msg" id="init-msg">Downloading brain cells (135M)... Please wait.</div>
   </div>
   <div class="input-area">
     <div class="temp-control">
       Chaos Level (Temp): 
       <input type="number" id="temp-input" value="0.7" step="0.1" min="0.1" max="2.0">
-      <span title="0.1 = Sane, 1.0+ = Braindead">ⓘ</span>
+      <span title="0.1 = Focused, 1.0+ = Random/Creative">ⓘ</span>
     </div>
     <div class="controls">
-      <input type="text" id="user-input" placeholder="Talk to Sharon..." disabled>
+      <input type="text" id="user-input" placeholder="Loading model..." disabled>
       <button id="send-btn" disabled>Send</button>
     </div>
   </div>
 </div>
 
 <script type="module">
-  import { pipeline } from "https://cdn.jsdelivr.net/npm/@xenova/transformers";
+  import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2";
+
+  // Configuration to prevent loading errors in some environments
+  env.allowRemoteModels = true;
+  env.backstageMode = false;
 
   const messagesDiv = document.getElementById("messages");
   const inputField = document.getElementById("user-input");
@@ -187,18 +192,28 @@
 
   let generator = null;
   let chatHistory = [
-    { role: "system", content: "You are Sharon, a funny local AI assistant. You sometimes say weird things." }
+    { role: "system", content: "You are Sharon, a funny local AI assistant. You sometimes say weird things and are helpful but quirky." }
   ];
 
   async function init() {
     try {
-      generator = await pipeline("text-generation", "Xenova/SmolLM-135M-Instruct");
+      // Initialize the text-generation pipeline
+      generator = await pipeline("text-generation", "Xenova/SmolLM-135M-Instruct", {
+        progress_callback: (data) => {
+            if(data.status === 'progress') {
+                document.getElementById("init-msg").innerText = `Loading: ${Math.round(data.progress)}%`;
+            }
+        }
+      });
+
       statusDot.classList.add("ready");
       inputField.disabled = false;
       sendBtn.disabled = false;
-      addMessage("Brain is in. Adjust my chaos level and let's go.", "ai");
+      inputField.placeholder = "Talk to Sharon...";
+      document.getElementById("init-msg").innerText = "Brain online. I'm Sharon. What's up?";
     } catch (e) {
-      addMessage("Loading failed. Refresh?", "ai");
+      console.error("Initialization error:", e);
+      document.getElementById("init-msg").innerText = "Loading failed. This usually happens if the connection is interrupted. Please refresh.";
     }
   }
 
@@ -215,19 +230,23 @@
     const temp = parseFloat(tempField.value) || 0.7;
     if (!text || !generator) return;
 
+    // Display user message
     addMessage(text, "user");
     chatHistory.push({ role: "user", content: text });
     
     inputField.value = "";
     inputField.disabled = true;
+    sendBtn.disabled = true;
 
+    // Show typing indicator
     const thinking = document.createElement("div");
     thinking.className = "message ai-msg typing";
-    thinking.innerText = `Sharon is thinking (Temp: ${temp})...`;
+    thinking.innerText = `Sharon is cooking... (Chaos: ${temp})`;
     messagesDiv.appendChild(thinking);
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
     try {
+      // Construct prompt using ChatML format
       let fullPrompt = "";
       for (const msg of chatHistory) {
         fullPrompt += `<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n`;
@@ -235,25 +254,33 @@
       fullPrompt += `<|im_start|>assistant\n`;
 
       const output = await generator(fullPrompt, { 
-        max_new_tokens: 80,
+        max_new_tokens: 120,
         temperature: temp,
-        do_sample: true,
-        stop_sequences: ["<|im_end|>"]
+        do_sample: temp > 0,
+        top_k: 50,
+        stop_sequences: ["<|im_end|>", "<|im_start|>"]
       });
 
       if (messagesDiv.contains(thinking)) messagesDiv.removeChild(thinking);
 
-      const rawText = output[0].generated_text;
-      let aiResponse = rawText.split("assistant\n").pop().replace("<|im_end|>", "").trim();
+      // Clean the output: get only what follows the prompt
+      const generatedText = output[0].generated_text;
+      let aiResponse = generatedText.substring(fullPrompt.length).split("<|im_end|>")[0].trim();
+
+      if (!aiResponse) aiResponse = "I have no words for that. Try again?";
 
       chatHistory.push({ role: "assistant", content: aiResponse });
       addMessage(aiResponse, "ai");
 
-      if (chatHistory.length > 10) chatHistory = [chatHistory[0], ...chatHistory.slice(-8)];
+      // Maintain context window (System + last 6 messages)
+      if (chatHistory.length > 8) {
+        chatHistory = [chatHistory[0], ...chatHistory.slice(-6)];
+      }
 
     } catch (err) {
+      console.error("Generation error:", err);
       if (messagesDiv.contains(thinking)) messagesDiv.removeChild(thinking);
-      addMessage("Brain melted. Try lowering the Temp.", "ai");
+      addMessage("My brain just short-circuited. Maybe lower the Chaos Level?", "ai");
     }
 
     inputField.disabled = false;
