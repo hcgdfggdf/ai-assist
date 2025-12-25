@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sharon AI (Memory Edition)</title>
+  <title>Sharon AI (Chaos Control)</title>
   <style>
     :root {
       --bg-color: #121212;
@@ -27,7 +27,7 @@
 
     .chat-container {
       width: 100%;
-      max-width: 450px;
+      max-width: 480px;
       height: 85vh;
       background-color: var(--card-bg);
       border-radius: 16px;
@@ -47,6 +47,8 @@
       align-items: center;
     }
 
+    .status-area { display: flex; align-items: center; gap: 10px; }
+    
     .status-dot {
       height: 10px;
       width: 10px;
@@ -94,11 +96,27 @@
     .input-area {
       padding: 15px;
       display: flex;
+      flex-direction: column;
       gap: 10px;
       border-top: 1px solid #333;
+      background: #1a1a1a;
     }
 
-    input {
+    .controls {
+      display: flex;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .temp-control {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.75rem;
+      color: #888;
+    }
+
+    input[type="text"] {
       flex: 1;
       padding: 12px;
       border-radius: 25px;
@@ -106,6 +124,16 @@
       background: #121212;
       color: white;
       outline: none;
+    }
+
+    input[type="number"] {
+      width: 50px;
+      background: #121212;
+      border: 1px solid #444;
+      color: var(--accent-color);
+      border-radius: 5px;
+      padding: 5px;
+      text-align: center;
     }
 
     button {
@@ -118,7 +146,7 @@
       font-weight: bold;
     }
 
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button:disabled { opacity: 0.5; }
 
     .typing { font-style: italic; opacity: 0.7; font-size: 0.8rem; }
   </style>
@@ -127,15 +155,24 @@
 
 <div class="chat-container">
   <header>
-    <strong>Sharon (ai)</strong>
-    <div id="status-dot" class="status-dot"></div>
+    <strong>Sharon (Brain Config)</strong>
+    <div class="status-area">
+      <div id="status-dot" class="status-dot"></div>
+    </div>
   </header>
   <div id="messages">
-    <div class="message ai-msg">Installing a bigger brain... one sec.</div>
+    <div class="message ai-msg">Waking up Sharon...</div>
   </div>
   <div class="input-area">
-    <input type="text" id="user-input" placeholder="Talk to Sharon..." disabled>
-    <button id="send-btn" disabled>Send</button>
+    <div class="temp-control">
+      Chaos Level (Temp): 
+      <input type="number" id="temp-input" value="0.7" step="0.1" min="0.1" max="2.0">
+      <span title="0.1 = Sane, 1.0+ = Braindead">ⓘ</span>
+    </div>
+    <div class="controls">
+      <input type="text" id="user-input" placeholder="Talk to Sharon..." disabled>
+      <button id="send-btn" disabled>Send</button>
+    </div>
   </div>
 </div>
 
@@ -144,28 +181,24 @@
 
   const messagesDiv = document.getElementById("messages");
   const inputField = document.getElementById("user-input");
+  const tempField = document.getElementById("temp-input");
   const sendBtn = document.getElementById("send-btn");
   const statusDot = document.getElementById("status-dot");
 
   let generator = null;
-  // This array stores the conversation so Sharon has memory
   let chatHistory = [
-    { role: "system", content: "You are Sharon, a witty and smart local AI assistant. Keep responses concise and friendly." }
+    { role: "system", content: "You are Sharon, a funny local AI assistant. You sometimes say weird things." }
   ];
 
   async function init() {
     try {
-      // SmolLM-135M is a high-quality small model that understands chat formats
       generator = await pipeline("text-generation", "Xenova/SmolLM-135M-Instruct");
-      
       statusDot.classList.add("ready");
       inputField.disabled = false;
       sendBtn.disabled = false;
-      
-      addMessage("Brain upgrade successful. I can remember things now. What's on your mind?", "ai");
+      addMessage("Brain is in. Adjust my chaos level and let's go.", "ai");
     } catch (e) {
-      console.error(e);
-      addMessage("Brain upgrade failed. Check your internet/console.", "ai");
+      addMessage("Loading failed. Refresh?", "ai");
     }
   }
 
@@ -179,57 +212,48 @@
 
   async function handleSend() {
     const text = inputField.value.trim();
+    const temp = parseFloat(tempField.value) || 0.7;
     if (!text || !generator) return;
 
-    // 1. Add to UI and Memory
     addMessage(text, "user");
     chatHistory.push({ role: "user", content: text });
     
     inputField.value = "";
     inputField.disabled = true;
 
-    // 2. Show thinking state
     const thinking = document.createElement("div");
     thinking.className = "message ai-msg typing";
-    thinking.innerText = "Sharon is thinking...";
+    thinking.innerText = `Sharon is thinking (Temp: ${temp})...`;
     messagesDiv.appendChild(thinking);
     messagesDiv.scrollTop = messagesDiv.scrollHeight;
 
     try {
-      // 3. Construct the prompt using the whole history
       let fullPrompt = "";
       for (const msg of chatHistory) {
         fullPrompt += `<|im_start|>${msg.role}\n${msg.content}<|im_end|>\n`;
       }
       fullPrompt += `<|im_start|>assistant\n`;
 
-      // 4. Generate response
       const output = await generator(fullPrompt, { 
-        max_new_tokens: 100,
-        temperature: 0.7,
+        max_new_tokens: 80,
+        temperature: temp,
         do_sample: true,
         stop_sequences: ["<|im_end|>"]
       });
 
-      messagesDiv.removeChild(thinking);
+      if (messagesDiv.contains(thinking)) messagesDiv.removeChild(thinking);
 
-      // 5. Extract only the new assistant text
       const rawText = output[0].generated_text;
       let aiResponse = rawText.split("assistant\n").pop().replace("<|im_end|>", "").trim();
 
-      // 6. Save to Memory and Show UI
       chatHistory.push({ role: "assistant", content: aiResponse });
       addMessage(aiResponse, "ai");
 
-      // Keep memory from getting too long (keep last 10 messages)
-      if (chatHistory.length > 11) {
-        chatHistory = [chatHistory[0], ...chatHistory.slice(-10)];
-      }
+      if (chatHistory.length > 10) chatHistory = [chatHistory[0], ...chatHistory.slice(-8)];
 
     } catch (err) {
-      console.error(err);
       if (messagesDiv.contains(thinking)) messagesDiv.removeChild(thinking);
-      addMessage("My brain short-circuited. Try again?", "ai");
+      addMessage("Brain melted. Try lowering the Temp.", "ai");
     }
 
     inputField.disabled = false;
