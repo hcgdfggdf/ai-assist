@@ -1,100 +1,107 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sharon AI</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-100 h-screen flex flex-col font-sans">
+<script type="module">
+  import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.2.1";
 
-    <header class="bg-white border-b p-4 flex justify-between items-center shadow-sm">
-        <h1 class="text-xl font-bold text-blue-600">Sharon AI</h1>
-        <div id="status" class="text-xs font-mono bg-gray-200 px-2 py-1 rounded">Initializing...</div>
-    </header>
+  // --- CRITICAL FIXES ---
+  // Disable local models so it doesn't look for files on your server
+  env.allowLocalModels = false; 
+  // Allow remote models to fetch from Hugging Face
+  env.allowRemoteModels = true;
+  
+  // Use a specific proxy or clear it to avoid CORS issues
+  env.backends.onnx.wasm.proxy = false; 
+  
+  // Some browsers fail if numThreads is too high or set incorrectly
+  env.backends.onnx.wasm.numThreads = 1;
 
-    <div id="chat-box" class="flex-1 overflow-y-auto p-4 space-y-4 max-w-2xl mx-auto w-full">
-        <div class="bg-blue-100 text-blue-800 p-3 rounded-lg text-sm">
-            <b>System:</b> I'm downloading about 150MB of brain-power to your browser. Please wait...
-        </div>
-    </div>
+  const messagesDiv = document.getElementById("messages");
+  const inputField = document.getElementById("user-input");
+  const sendBtn = document.getElementById("send-btn");
+  const statusDot = document.getElementById("status-dot");
+  const statusText = document.getElementById("status-text");
 
-    <div class="p-4 bg-white border-t">
-        <div class="max-w-2xl mx-auto flex gap-2">
-            <input type="text" id="user-input" placeholder="Loading Sharon..." disabled
-                class="flex-1 border rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-50">
-            <button id="send-btn" disabled class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold disabled:opacity-50">
-                Ask
-            </button>
-        </div>
-    </div>
+  let generator = null;
+  let chatHistory = [{ role: "system", content: "You are Sharon, a sarcastic AI assistant." }];
 
-    <script type="module">
-        // Using the updated v3 library from Hugging Face
-        import { pipeline } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.0';
-
-        const chatBox = document.getElementById('chat-box');
-        const userInput = document.getElementById('user-input');
-        const sendBtn = document.getElementById('send-btn');
-        const status = document.getElementById('status');
-
-        let generator;
-
-        async function init() {
-            try {
-                // We use a specific ONNX-optimized model for better browser compatibility
-                generator = await pipeline('text-generation', 'onnx-community/SmolLM2-135M-Instruct-ONNX', {
-                    device: 'webgpu', // Tries to use your graphics card for speed
-                });
-                
-                status.innerText = "Ready";
-                status.className = "text-xs font-mono bg-green-200 text-green-800 px-2 py-1 rounded";
-                userInput.placeholder = "Say something to Sharon...";
-                userInput.disabled = false;
-                sendBtn.disabled = false;
-            } catch (err) {
-                console.error(err);
-                // Fallback to CPU if WebGPU fails
-                status.innerText = "WebGPU failed, trying CPU...";
-                generator = await pipeline('text-generation', 'onnx-community/SmolLM2-135M-Instruct-ONNX');
-                status.innerText = "Ready (CPU Mode)";
-            }
+  async function init() {
+    try {
+      statusText.innerText = "Requesting brain cells from the cloud...";
+      
+      // Load the model
+      // We use 'onnx-community/SmolLM2-135M-Instruct' which is highly compatible
+      generator = await pipeline("text-generation", "onnx-community/SmolLM2-135M-Instruct", {
+        device: "wasm", // Force WASM for maximum compatibility across browsers
+        progress_callback: (p) => {
+          if (p.status === 'progress') {
+            statusText.innerText = `Downloading: ${Math.round(p.progress)}%`;
+          }
         }
+      });
 
-        async function chat() {
-            const prompt = userInput.value.trim();
-            if (!prompt) return;
+      statusDot.classList.add("ready");
+      statusText.innerText = "I'm in! Let's cause some chaos.";
+      inputField.disabled = false;
+      sendBtn.disabled = false;
+      inputField.placeholder = "Say something...";
+    } catch (e) {
+      console.error("Initialization Error:", e);
+      statusText.innerText = "Access Denied: " + e.message;
+    }
+  }
 
-            appendMsg('You', prompt, 'bg-white');
-            userInput.value = '';
-            
-            const thinkingDiv = appendMsg('Sharon', 'Thinking...', 'bg-blue-50');
-            
-            // Format for an "Instruct" model
-            const messages = [{ role: "user", content: prompt }];
-            
-            const output = await generator(messages, { 
-                max_new_tokens: 128,
-                temperature: 0.7 
-            });
+  function addMsg(text, type) {
+    const d = document.createElement("div");
+    d.className = `message ${type}-msg`;
+    d.innerText = text;
+    messagesDiv.appendChild(d);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
 
-            thinkingDiv.innerHTML = `<b>Sharon:</b> ${output[0].generated_text[1].content}`;
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
+  async function talk() {
+    const val = inputField.value.trim();
+    if (!val || !generator) return;
 
-        function appendMsg(sender, text, color) {
-            const div = document.createElement('div');
-            div.className = `${color} p-3 rounded-lg shadow-sm border border-gray-100 text-sm`;
-            div.innerHTML = `<b>${sender}:</b> ${text}`;
-            chatBox.appendChild(div);
-            chatBox.scrollTop = chatBox.scrollHeight;
-            return div;
-        }
+    addMsg(val, "user");
+    chatHistory.push({ role: "user", content: val });
+    inputField.value = "";
+    inputField.disabled = true;
+    sendBtn.disabled = true;
 
-        sendBtn.onclick = chat;
-        userInput.onkeydown = (e) => { if(e.key === 'Enter') chat() };
+    const t = document.createElement("div");
+    t.className = "message ai-msg";
+    t.innerText = "Sharon is thinking...";
+    messagesDiv.appendChild(t);
 
-        init();
-    </script>
-</body>
-</html>
+    try {
+      const output = await generator(chatHistory, { 
+        max_new_tokens: 60, 
+        temperature: parseFloat(document.getElementById("temp-input").value) || 0.7,
+        do_sample: true,
+        return_full_text: false
+      });
+
+      if (messagesDiv.contains(t)) messagesDiv.removeChild(t);
+      
+      // Handle different output formats between Transformers.js versions
+      const response = output[0].generated_text.at(-1).content;
+      
+      addMsg(response, "ai");
+      chatHistory.push({ role: "assistant", content: response });
+      
+      // Keep memory short to prevent slowdowns
+      if (chatHistory.length > 8) {
+          chatHistory = [chatHistory[0], ...chatHistory.slice(-6)];
+      }
+    } catch (err) {
+      if (messagesDiv.contains(t)) messagesDiv.removeChild(t);
+      addMsg("Error: " + err.message, "ai");
+    }
+    
+    inputField.disabled = false;
+    inputField.focus();
+    sendBtn.disabled = false;
+  }
+
+  sendBtn.onclick = talk;
+  inputField.onkeypress = (e) => { if(e.key === 'Enter') talk(); };
+  init();
+</script>
